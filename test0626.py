@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import math
 
-camera_id = 1
+camera_id = 0
 delay = 1
 window_name = 'frame'
 
