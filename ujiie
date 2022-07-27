@@ -1,0 +1,162 @@
+#精密ノイズ除去
+import cv2
+import numpy as np
+import copy
+
+#トラックバー作成
+def onTrackbar1(position1):
+    global threshold
+    threshold = position1
+def onTrackbar2(position2):
+    global edgeMin
+    edgeMin = position2
+def onTrackbar3(position3):
+    global edgeMax
+    edgeMax = position3
+
+
+trackbarName1 = 'Threshold'
+trackbarName2 = 'edgeMin'
+trackbarName3 = 'edgeMax'
+
+windowName_1 = 'raw'
+windowName_2 = 'threshold'
+windowName_3 = 'contours_cl'
+windowName_4 = 'contours_wb'
+windowName_5 = 'adjust'
+
+#window作成
+cv2.namedWindow(windowName_1)
+cv2.namedWindow(windowName_2)
+cv2.namedWindow(windowName_3)
+cv2.namedWindow(windowName_4)
+cv2.namedWindow(windowName_5)
+
+
+
+
+#トラックバーの初期設定
+threshold = 226
+edgeMin = 15
+edgeMax = 250
+cv2.createTrackbar(trackbarName1, windowName_5, threshold, 255, onTrackbar1)
+cv2.createTrackbar(trackbarName2, windowName_5, edgeMin, 200, onTrackbar2)
+cv2.createTrackbar(trackbarName3, windowName_5, edgeMax, 1600, onTrackbar3)
+
+#動画の取り込み,0でカメラ映像
+src = cv2.VideoCapture('test1.MOV')
+#src = cv2.VideoCapture(0)
+
+#外接四角形描画
+def createSqr(img):
+    #img1=img.copy()
+    for i, cnt in enumerate(contours):
+        x, y, w, h = cv2.boundingRect(cnt)
+        img = cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 255), 2)
+    return img
+
+
+
+
+#動画が開けなくともエラーにならないように設定
+if not src.isOpened():
+    print("映像が取得できません。")
+
+    import sys
+    sys.exit()
+
+
+#エッジ座標表示の初期設定
+stopper = 0
+
+#ループ
+while True:
+
+    #frameは動画の１フレームを保存、読み取るフレームがなくなったときループを抜ける
+    retval, frame = src.read()
+    if frame is None:
+        break
+
+    #サイズ変更
+    h, w, c= frame.shape
+    value = 800
+    if w > h:
+        if w > value:
+            frame = cv2.resize(frame, dsize=None, fx=value/w , fy=value/w)
+        else:
+            frame = cv2.resize(frame, dsize=None, fx=value/w, fy=value/w)
+    else:
+        if h > value:
+            frame = cv2.resize(frame, dsize=None, fx=value/h , fy=value/h)
+        else:
+            frame = cv2.resize(frame, dsize=None, fx=value/h, fy=value/h)
+
+#window2
+    #グレースケール画像作成
+    mv_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    #2値画像作成
+    retval, mv_wb = cv2.threshold(mv_gray, threshold, 255, cv2.THRESH_BINARY_INV)
+
+#window3,4
+    mv_win3 = copy.copy(mv_wb)
+    mv_win4 = copy.copy(mv_wb)
+    frame2 = copy.copy(frame)
+
+    #エッジ検出
+    contours, hierarchy = cv2.findContours(mv_win3, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+
+    #ノイズ除去
+    #dst = cv2.fastNlMeansDenoisingColored(img_wb,None,30,10,7,21)
+    #モルフォロジー処理
+    cv2.morphologyEx(mv_win4, cv2.MORPH_OPEN, None, dst=mv_win4, iterations=1)
+    cv2.morphologyEx(mv_win4, cv2.MORPH_CLOSE, None, dst=mv_win4, iterations=1)
+    min_area = 15
+    max_area = edgeMax
+    contours2 = list(filter(lambda x: cv2.contourArea(x) >= 7000, contours))
+    contours3 = list(filter(lambda x: cv2.contourArea(x) <= 20000, contours2))
+    contours = list(filter(lambda x: abs(cv2.contourArea(x) - min_area/2 - max_area/2)< (max_area - min_area)/2, contours))
+
+    #カラー化
+    mv_win4 = cv2.cvtColor(mv_win4, cv2.COLOR_GRAY2BGR)
+
+    #エッジに線を描画
+    mv_cont_cl = cv2.drawContours(frame2, contours, -1, (0,255,0),1)
+    mv_cont_wb = cv2.drawContours(mv_win4, contours, -1, (0,255,0),5)
+    createSqr(frame2)
+
+    #type変換
+    mv_cont_cl = mv_cont_cl.astype(np.uint8)
+    mv_cont_wb = mv_cont_wb.astype(np.uint8)
+
+    #window表示
+    cv2.imshow(windowName_1, frame)
+    cv2.imshow(windowName_2, mv_wb)
+    cv2.imshow(windowName_3, mv_cont_cl)
+    cv2.imshow(windowName_4, mv_cont_wb)
+
+    #エッジの塊の座標表示
+    if(len(contours) != stopper):
+        for i, cnt in enumerate(contours):
+            M = cv2.moments(cnt)
+            if M["m00"] != 0:
+                cx = M["m10"] / M["m00"]
+            else:
+                cx = 0
+            if M["m00"] != 0:
+                cy = M["m01"] / M["m00"]
+            else:
+                cy = 0
+            print(i, cx, cy, sep="\t")
+        stopper = len(contours)
+
+    #もしescキーが押されたらループを抜ける
+    key = cv2.waitKey(33)
+    if key == 27:
+        break
+
+
+
+#window破壊
+cv2.destroyAllWindows()
+src.release()
